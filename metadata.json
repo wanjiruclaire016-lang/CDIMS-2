@@ -1,0 +1,7 @@
+{
+  "name": "Crop Disease Information Management System (CDIMS)",
+  "description": "Crop Disease Information Management System (CDIMS) for CropCare Centre, Machakos County, Kenya. Connects farmers with verified agricultural extension officers for crop disease diagnosis and management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

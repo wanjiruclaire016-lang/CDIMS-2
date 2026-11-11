@@ -1,0 +1,168 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered user profile with role and officer verification status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "fullName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 100 },
+        "phone": { "type": "string", "maxLength": 30 },
+        "role": { "type": "string", "enum": ["farmer", "officer", "admin", "superadmin"] },
+        "officerStatus": { "type": "string", "enum": ["pending", "verified", "rejected", "revoked"] },
+        "officerIdNumber": { "type": "string", "maxLength": 50 },
+        "subCounty": { "type": "string", "maxLength": 50 },
+        "ward": { "type": "string", "maxLength": 50 },
+        "preferredLanguage": { "type": "string", "enum": ["en", "sw"] },
+        "disabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "fullName", "email", "role", "createdAt"]
+    },
+    "Case": {
+      "title": "Case",
+      "description": "Crop disease case reported by farmer",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "farmerId": { "type": "string" },
+        "farmerName": { "type": "string", "maxLength": 100 },
+        "farmerPhone": { "type": "string", "maxLength": 30 },
+        "crop": { "type": "string", "maxLength": 50 },
+        "symptomsDescription": { "type": "string", "maxLength": 2000 },
+        "dateFirstNoticed": { "type": "string", "maxLength": 20 },
+        "subCounty": { "type": "string", "maxLength": 50 },
+        "ward": { "type": "string", "maxLength": 50 },
+        "photoUrls": { "type": "array" },
+        "photoCount": { "type": "number" },
+        "slotNames": { "type": "array" },
+        "status": { "type": "string", "enum": ["Submitted", "Assigned", "In Review", "Advice Given", "Resolved"] },
+        "assignedOfficerId": { "type": "string" },
+        "assignedOfficerName": { "type": "string", "maxLength": 100 },
+        "diagnosis": { "type": "object" },
+        "rating": { "type": "number" },
+        "ratingFeedback": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "farmerId", "farmerName", "crop", "symptomsDescription", "subCounty", "status", "createdAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Consultation message in a case discussion thread",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "caseId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string", "maxLength": 100 },
+        "senderRole": { "type": "string", "enum": ["farmer", "officer", "admin"] },
+        "text": { "type": "string", "maxLength": 2000 },
+        "attachments": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "caseId", "senderId", "senderName", "senderRole", "text", "createdAt"]
+    },
+    "Disease": {
+      "title": "Disease",
+      "description": "Curated crop disease guide entry in disease library",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string", "maxLength": 100 },
+        "crop": { "type": "string", "maxLength": 50 },
+        "symptoms": { "type": "string", "maxLength": 3000 },
+        "causes": { "type": "string", "maxLength": 2000 },
+        "prevention": { "type": "string", "maxLength": 2000 },
+        "treatment": { "type": "string", "maxLength": 2000 },
+        "referencePhotoUrls": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "crop", "symptoms", "prevention", "treatment"]
+    },
+    "Alert": {
+      "title": "Alert",
+      "description": "County or sub-county outbreak alert broadcast",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "subCounty": { "type": "string", "maxLength": 50 },
+        "crop": { "type": "string", "maxLength": 50 },
+        "diseaseName": { "type": "string", "maxLength": 100 },
+        "severity": { "type": "string", "enum": ["High", "Moderate", "Advisory"] },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 2000 },
+        "officerId": { "type": "string" },
+        "officerName": { "type": "string", "maxLength": 100 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "subCounty", "crop", "severity", "title", "message", "officerId", "active", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Administrative actions audit log",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "actorId": { "type": "string" },
+        "actorName": { "type": "string", "maxLength": 100 },
+        "actorEmail": { "type": "string", "maxLength": 100 },
+        "action": { "type": "string", "maxLength": 100 },
+        "targetId": { "type": "string", "maxLength": 100 },
+        "details": { "type": "string", "maxLength": 1000 },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "actorId", "actorName", "action", "targetId", "timestamp"]
+    },
+    "CasePhoto": {
+      "title": "CasePhoto",
+      "description": "Base64-encoded photo document stored in cases/{caseId}/photos/{slotName}",
+      "type": "object",
+      "properties": {
+        "dataUrl": { "type": "string" },
+        "slot": { "type": "string", "maxLength": 50 },
+        "size": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["dataUrl", "slot", "size", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles for farmers, extension officers, and administrators"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Designated administrators directory"
+    },
+    "/cases/{caseId}": {
+      "schema": { "$ref": "#/entities/Case" },
+      "description": "Crop disease diagnosis cases submitted by farmers"
+    },
+    "/cases/{caseId}/photos/{slotName}": {
+      "schema": { "$ref": "#/entities/CasePhoto" },
+      "description": "Subcollection storing compressed photos for a disease case"
+    },
+    "/cases/{caseId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Consultation messages thread for each case"
+    },
+    "/diseases/{diseaseId}": {
+      "schema": { "$ref": "#/entities/Disease" },
+      "description": "Publicly accessible disease encyclopedia and management library"
+    },
+    "/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/Alert" },
+      "description": "Sub-county outbreak advisories"
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Security and administrative audit trails"
+    }
+  }
+}

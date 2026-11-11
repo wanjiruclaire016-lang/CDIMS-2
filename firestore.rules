@@ -1,0 +1,174 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // The single Super Admin account
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email == 'wanjiruclaire016@gmail.com' ||
+        request.auth.token.email.lower() == 'wanjiruclaire016@gmail.com'
+      );
+    }
+
+    // Admins (either Super Admin or promoted in /admins collection)
+    function isAdmin() {
+      return isSignedIn() && (
+        isSuperAdmin() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isOfficer() {
+      return isSignedIn() && (
+        isAdmin() ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'officer' &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.officerStatus == 'verified')
+      );
+    }
+
+    // USERS COLLECTION
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      
+      // User creation: Super Admin can initialize as superadmin; others only farmer or pending officer
+      allow create: if isSignedIn() && request.auth.uid == userId && (
+        (isSuperAdmin() && (request.resource.data.role == 'superadmin' || request.resource.data.role == 'admin' || request.resource.data.role == 'farmer')) ||
+        (request.resource.data.role == 'farmer') ||
+        (request.resource.data.role == 'officer' && request.resource.data.officerStatus == 'pending')
+      );
+
+      // Updates:
+      // 1. Super Admin account can NEVER be demoted, disabled, or modified by anyone else
+      // 2. Only Super Admin can promote someone to 'admin' or demote an 'admin'
+      // 3. Regular admins can verify officers and manage non-admin users
+      // 4. Users can edit their own basic info (cannot change role, status, email, or disabled)
+      allow update: if isSignedIn() && (
+        // Case A: Super Admin updating any user
+        (isSuperAdmin() && (
+          // If updating the Super Admin's own profile, role cannot change and disabled cannot be true
+          resource.data.email != 'wanjiruclaire016@gmail.com' ||
+          (request.resource.data.role == 'superadmin' && request.resource.data.disabled != true)
+        )) ||
+        // Case B: Regular Admin updating users (strictly forbidden from touching Super Admin, promoting to Admin, or demoting Admins)
+        (isAdmin() && !isSuperAdmin() &&
+          resource.data.email != 'wanjiruclaire016@gmail.com' &&
+          resource.data.role != 'superadmin' &&
+          resource.data.role != 'admin' &&
+          request.resource.data.role != 'admin' &&
+          request.resource.data.role != 'superadmin'
+        ) ||
+        // Case C: Regular user updating their own profile
+        (request.auth.uid == userId &&
+          resource.data.email != 'wanjiruclaire016@gmail.com' &&
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'officerStatus', 'disabled', 'email'])
+        )
+      );
+
+      // Super Admin account can NEVER be deleted. Only Super Admin can delete other accounts.
+      allow delete: if isSuperAdmin() && resource.data.email != 'wanjiruclaire016@gmail.com';
+    }
+
+    // ADMINS COLLECTION - ONLY Super Admin can promote/demote administrators
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+    }
+
+    // CASES COLLECTION
+    match /cases/{caseId} {
+      allow read: if isSignedIn();
+
+      // Farmers can create cases with guaranteed unique IDs (preventing ID collisions)
+      allow create: if isSignedIn() &&
+        request.resource.data.farmerId == request.auth.uid &&
+        request.resource.data.id == caseId &&
+        !exists(/databases/$(database)/documents/cases/$(caseId));
+
+      // Updates:
+      // - Admins and Super Admin can update any case (claim, manual reassign, escalate/flag)
+      // - Verified Officers can claim, diagnose, reassign back to queue, update status
+      // - Farmers can update rating/feedback once resolved, or update details if still Submitted
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (isOfficer() && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['deleted', 'deletedAt', 'deletedBy', 'deleteReason'])) ||
+        (resource.data.farmerId == request.auth.uid && (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'ratingFeedback', 'updatedAt']) ||
+          (resource.data.status == 'Submitted' && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['crop', 'symptomsDescription', 'dateFirstNoticed', 'subCounty', 'ward', 'photoUrls', 'photoCount', 'slotNames', 'updatedAt']))
+        ))
+      );
+
+      allow delete: if isAdmin();
+
+      // PHOTOS SUBCOLLECTION (Temporary base64 photo storage in Firestore)
+      match /photos/{slotName} {
+        // The case owner can create
+        allow create: if isSignedIn() && (
+          get(/databases/$(database)/documents/cases/$(caseId)).data.farmerId == request.auth.uid
+        );
+
+        // The case owner and verified officers can read, nobody else
+        allow read: if isSignedIn() && (
+          isOfficer() ||
+          get(/databases/$(database)/documents/cases/$(caseId)).data.farmerId == request.auth.uid
+        );
+
+        allow update, delete: if isAdmin();
+      }
+
+      // MESSAGES SUBCOLLECTION (Accessible to case participants & Admins for oversight/quality control)
+      match /messages/{messageId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && (
+          request.resource.data.senderId == request.auth.uid ||
+          request.resource.data.senderRole == 'system'
+        );
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // DISEASES LIBRARY COLLECTION
+    match /diseases/{diseaseId} {
+      allow read: if true;
+      allow create, update: if isAdmin() || isOfficer();
+      allow delete: if isAdmin();
+    }
+
+    // OUTBREAK ALERTS COLLECTION
+    match /alerts/{alertId} {
+      allow read: if true;
+      allow create, update: if isOfficer() || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ALERT ACKNOWLEDGEMENTS COLLECTION
+    match /alertAcknowledgements/{ackId} {
+      allow read: if isSignedIn();
+      allow create, update: if isSignedIn() && request.resource.data.farmerId == request.auth.uid;
+      allow delete: if isAdmin();
+    }
+
+    // AUDIT LOGS COLLECTION
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isSignedIn();
+      allow update, delete: if false; // Strict immutability
+    }
+
+    // NOTIFICATIONS COLLECTION
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+    }
+  }
+}

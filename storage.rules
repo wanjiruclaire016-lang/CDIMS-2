@@ -1,0 +1,24 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /cases/{caseId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.resource.size < 10 * 1024 * 1024 && request.resource.contentType.matches('image/.*');
+    }
+    match /diseases/{diseaseId}/{allPaths=**} {
+      allow read: if true;
+      allow create, update: if request.auth != null && (
+        request.auth.token.email == 'wanjiruclaire016@gmail.com' ||
+        firestore.get(/databases/ai-studio-983b0be8-1af8-4d03-8895-ca16be0a6e85/documents/users/$(request.auth.uid)).data.role in ['admin', 'superadmin', 'officer']
+      ) && request.resource.size < 5 * 1024 * 1024 && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null && (
+        request.auth.token.email == 'wanjiruclaire016@gmail.com' ||
+        firestore.get(/databases/ai-studio-983b0be8-1af8-4d03-8895-ca16be0a6e85/documents/users/$(request.auth.uid)).data.role in ['admin', 'superadmin', 'officer']
+      );
+    }
+    match /profiles/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId && request.resource.size < 5 * 1024 * 1024 && request.resource.contentType.matches('image/.*');
+    }
+  }
+}
