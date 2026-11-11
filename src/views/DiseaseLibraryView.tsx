@@ -2,9 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { DiseaseItem, DiseaseImage } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { collection, onSnapshot, doc, setDoc, updateDoc } from 'firebase/firestore';
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from 'firebase/storage';
-import { db, storage } from '../firebase';
+import { collection, onSnapshot, doc, setDoc, updateDoc, addDoc, deleteDoc, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 import { seedDiseasesCollectionIfNeeded } from '../utils/diseaseDatabase';
 import { DiseaseImageWithFallback } from '../components/DiseaseImageWithFallback';
 import { formatDateKE } from '../utils/formatters';
@@ -86,7 +85,7 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
   const [deletingPhotoIdx, setDeletingPhotoIdx] = useState<number | null>(null);
   const [imageCaption, setImageCaption] = useState('');
   const [imagePart, setImagePart] = useState('leaves');
-  const [imageCredit, setImageCredit] = useState('CropCare Centre Field Team');
+  const [imageCredit, setImageCredit] = useState('');
   const [adminForm, setAdminForm] = useState({
     slug: '',
     crop: 'Maize',
@@ -287,13 +286,13 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
     }
   };
 
-  const compressDiseaseImage = (file: File): Promise<Blob> => {
+  const compressDiseaseImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
-        const maxWidth = 1200;
+        const maxWidth = 800;
         let { width, height } = img;
         if (width > maxWidth) {
           height = Math.round((height * maxWidth) / width);
@@ -308,14 +307,16 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
           return;
         }
         ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('Image compression failed.'));
-          },
-          'image/jpeg',
-          0.8
-        );
+
+        let dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+        if (dataUrl.length > 205000) {
+          dataUrl = canvas.toDataURL('image/jpeg', 0.5);
+        }
+        if (dataUrl.length > 950000) {
+          reject(new Error('Photo too large, please choose a smaller one'));
+          return;
+        }
+        resolve(dataUrl);
       };
       img.onerror = () => {
         URL.revokeObjectURL(objectUrl);
@@ -340,8 +341,8 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
     }
 
     const existingCount = targetDisease.images?.length || 0;
-    if (existingCount + files.length > 4) {
-      setUploadError(`Maximum 4 photos per disease. This disease already has ${existingCount} photo(s); you can add up to ${Math.max(0, 4 - existingCount)} more.`);
+    if (existingCount + files.length > 3) {
+      setUploadError(`Maximum 3 photos per disease. This disease already has ${existingCount} photo(s); you can add up to ${Math.max(0, 3 - existingCount)} more.`);
       e.target.value = '';
       return;
     }
@@ -363,51 +364,45 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
     setUploadError(null);
 
     try {
-      const uploadedImages: DiseaseImage[] = [];
+      const uploadedImages: (DiseaseImage & { id?: string })[] = [];
       const total = pendingPhotos.length;
+      const nowIso = new Date().toISOString();
 
       for (let i = 0; i < total; i++) {
         const { file } = pendingPhotos[i];
-        const compressedBlob = await compressDiseaseImage(file);
-        const baseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
-        const storagePath = `diseases/${targetDisease.slug}/${Date.now()}_${i}_${baseName}.jpg`;
-        const storageRef = ref(storage, storagePath);
+        setUploadProgress(Math.round(((i + 0.3) / total) * 100));
+        const imageData = await compressDiseaseImage(file);
 
-        const downloadUrl = await new Promise<string>((resolve, reject) => {
-          const task = uploadBytesResumable(storageRef, compressedBlob, {
-            contentType: 'image/jpeg',
-          });
-          task.on(
-            'state_changed',
-            (snapshot) => {
-              const fileProgress = snapshot.totalBytes > 0 ? snapshot.bytesTransferred / snapshot.totalBytes : 0;
-              const overall = Math.round(((i + fileProgress) / total) * 100);
-              setUploadProgress(overall);
-            },
-            (err) => reject(err),
-            async () => {
-              try {
-                const url = await getDownloadURL(task.snapshot.ref);
-                resolve(url);
-              } catch (urlErr) {
-                reject(urlErr);
-              }
-            }
-          );
-        });
+        const photoPayload = {
+          imageData,
+          caption: imageCaption.trim() || undefined,
+          credit: imageCredit.trim() || undefined,
+          uploadedBy: profile?.id || 'unknown',
+          createdAt: nowIso,
+        };
+
+        const docRef = await addDoc(collection(db, 'diseases', targetDisease.slug, 'photos'), photoPayload);
+        setUploadProgress(Math.round(((i + 1) / total) * 100));
 
         uploadedImages.push({
-          url: downloadUrl,
-          caption: imageCaption.trim() || undefined,
+          id: docRef.id,
+          url: imageData,
+          caption: photoPayload.caption,
           part: imagePart,
-          credit: imageCredit.trim() || undefined,
+          credit: photoPayload.credit,
           license: 'CropCare Centre Machakos',
         });
       }
 
       const updatedImages = [...(targetDisease.images || []), ...uploadedImages];
       await updateDoc(doc(db, 'diseases', targetDisease.slug), {
-        images: updatedImages,
+        images: updatedImages.map((img) => ({
+          url: img.url,
+          caption: img.caption,
+          part: img.part,
+          credit: img.credit,
+          license: img.license,
+        })),
       });
 
       const updatedDisease: DiseaseItem = {
@@ -424,11 +419,12 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
       pendingPhotos.forEach((p) => URL.revokeObjectURL(p.previewUrl));
       setPendingPhotos([]);
       setImageCaption('');
+      setImageCredit('');
       setUploadProgress(100);
-      setActionSuccess(`${uploadedImages.length} photo(s) uploaded and saved for ${targetDisease.nameEn}.`);
+      setActionSuccess(`${uploadedImages.length} photo(s) saved for ${targetDisease.nameEn}.`);
       setTimeout(() => setActionSuccess(null), 5000);
     } catch (err: any) {
-      console.error('Error uploading photo:', err);
+      console.error('Error saving photo:', err);
       const code = err?.code ? `${err.code}: ` : '';
       const msg = err?.message || String(err);
       setUploadError(`${code}${msg}`);
@@ -439,17 +435,21 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
 
   const handleDeleteDiseasePhoto = async (targetDisease: DiseaseItem, photoIndex: number) => {
     if (!isAdmin) return;
-    const imgToDelete = targetDisease.images?.[photoIndex];
+    const imgToDelete = targetDisease.images?.[photoIndex] as (DiseaseImage & { id?: string }) | undefined;
     if (!imgToDelete) return;
 
     setDeletingPhotoIdx(photoIndex);
     setUploadError(null);
     try {
-      try {
-        const storageRef = ref(storage, imgToDelete.url);
-        await deleteObject(storageRef);
-      } catch (storageErr: any) {
-        console.warn('Storage delete warning:', storageErr);
+      if (imgToDelete.id) {
+        await deleteDoc(doc(db, 'diseases', targetDisease.slug, 'photos', imgToDelete.id));
+      } else {
+        const snap = await getDocs(collection(db, 'diseases', targetDisease.slug, 'photos'));
+        for (const d of snap.docs) {
+          if (d.data().imageData === imgToDelete.url) {
+            await deleteDoc(d.ref);
+          }
+        }
       }
 
       const updatedImages = (targetDisease.images || []).filter((_, idx) => idx !== photoIndex);
@@ -468,7 +468,7 @@ export const DiseaseLibraryView: React.FC<DiseaseLibraryViewProps> = ({ onReport
       if (selectedDisease?.slug === targetDisease.slug) setSelectedDisease(updatedDisease);
       if (photoModalDisease?.slug === targetDisease.slug) setPhotoModalDisease(updatedDisease);
 
-      setActionSuccess('Photo deleted from Storage and Firestore.');
+      setActionSuccess('Photo deleted from Firestore.');
       setTimeout(() => setActionSuccess(null), 4000);
     } catch (err: any) {
       console.error('Error deleting photo:', err);

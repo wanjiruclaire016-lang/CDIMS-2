@@ -1,6 +1,5 @@
 import { doc, setDoc, collection, getDocs } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 
 /**
  * CONSTANT TO TOGGLE STORAGE BACKEND:
@@ -41,49 +40,27 @@ export async function saveCasePhotos(
 ): Promise<SavePhotosResult> {
   const slotNames = photos.map((p) => p.slot);
 
-  if (USE_FIRESTORE_PHOTOS) {
-    // Save each photo as its own document in cases/{caseId}/photos/{slotName}
-    // Fields: dataUrl (base64 string), slot, size, createdAt.
-    // Never put photos inside the main case document.
-    const nowIso = new Date().toISOString();
-    for (const photo of photos) {
-      const photoDocRef = doc(db, 'cases', caseId, 'photos', photo.slot);
-      try {
-        await setDoc(photoDocRef, {
-          dataUrl: photo.dataUrl,
-          slot: photo.slot,
-          size: photo.sizeBytes,
-          createdAt: nowIso,
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, `cases/${caseId}/photos/${photo.slot}`);
-      }
+  // Save each photo as its own document in cases/{caseId}/photos/{slotName}
+  const nowIso = new Date().toISOString();
+  for (const photo of photos) {
+    const photoDocRef = doc(db, 'cases', caseId, 'photos', photo.slot);
+    try {
+      await setDoc(photoDocRef, {
+        dataUrl: photo.dataUrl,
+        slot: photo.slot,
+        size: photo.sizeBytes,
+        createdAt: nowIso,
+      });
+    } catch (err) {
+      handleFirestoreError(err, OperationType.WRITE, `cases/${caseId}/photos/${photo.slot}`);
     }
-
-    return {
-      photoCount: photos.length,
-      slotNames,
-      photoUrls: [], // Empty: photos are kept in subcollection, not in main doc
-    };
-  } else {
-    // Firebase Storage upload fallback
-    const uploadedUrls: string[] = [];
-    for (const photo of photos) {
-      if (photo.file) {
-        const storagePath = `cases/${caseId}/${photo.slot}_${Date.now()}.jpg`;
-        const fileRef = ref(storage, storagePath);
-        await uploadBytes(fileRef, photo.file);
-        const downloadUrl = await getDownloadURL(fileRef);
-        uploadedUrls.push(downloadUrl);
-      }
-    }
-
-    return {
-      photoCount: uploadedUrls.length,
-      slotNames,
-      photoUrls: uploadedUrls,
-    };
   }
+
+  return {
+    photoCount: photos.length,
+    slotNames,
+    photoUrls: [], // Empty: photos are kept in subcollection, not in main doc
+  };
 }
 
 /**

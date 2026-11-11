@@ -21,8 +21,7 @@ import {
   orderBy,
   query,
 } from 'firebase/firestore';
-import { ref, deleteObject } from 'firebase/storage';
-import { db, storage, handleFirestoreError, OperationType } from '../firebase';
+import { db, handleFirestoreError, OperationType } from '../firebase';
 import { calculateCaseMetrics, generateCasesCsv, isUserSuperAdmin } from '../utils/caseFilters';
 import { CaseCard } from '../components/CaseCard';
 import { ReassignModal } from '../components/ReassignModal';
@@ -461,21 +460,7 @@ export const AdminDashboard: React.FC = () => {
         await deleteDoc(photoDoc.ref);
       }
 
-      // 3. Delete Firebase Storage photos if any
-      if (targetCase.photoUrls && targetCase.photoUrls.length > 0) {
-        for (const url of targetCase.photoUrls) {
-          if (url.includes('firebasestorage.googleapis.com')) {
-            try {
-              const fileRef = ref(storage, url);
-              await deleteObject(fileRef);
-            } catch (storageErr) {
-              console.warn('Could not delete storage object:', storageErr);
-            }
-          }
-        }
-      }
-
-      // 4. Delete the case document
+      // 3. Delete the case document
       await deleteDoc(doc(db, 'cases', targetCase.id));
 
       // 5. Record audit log

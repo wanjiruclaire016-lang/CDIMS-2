@@ -5,9 +5,8 @@ import { CaseItem, OutbreakAlert } from '../types';
 import { MACHAKOS_SUB_COUNTIES } from '../utils/machakosData';
 import { generateUniqueCaseId } from '../utils/idGenerator';
 import { formatDateKE, isValidKenyanPhone, formatKenyanPhone } from '../utils/formatters';
-import { db, storage } from '../firebase';
+import { db } from '../firebase';
 import { doc, setDoc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import heic2any from 'heic2any';
 import {
   saveCasePhotos,
